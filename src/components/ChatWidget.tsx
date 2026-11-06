@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Message = { role: "user" | "assistant"; content: string };
 
-const HINTS = ["Какие курсы у вас есть?", "Сколько стоит рассрочка?", "Как вернуть деньги?"];
+const HINTS = ["Какие курсы у вас есть?", "Какая есть рассрочка?", "С какого возраста можно учиться?"];
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false);
@@ -90,7 +90,7 @@ export default function ChatWidget() {
           <div className="chat-log" ref={log} aria-live="polite">
             {messages.length === 0 && (
               <div className="chat-empty">
-                <p className="soft">Спросите про курсы, цены, наставников, расписание или оплату.</p>
+                <p className="soft">Спросите про курсы, цены, преподавателей, возраст или оплату.</p>
                 <div className="chat-hints">
                   {HINTS.map((hint) => (
                     <button key={hint} type="button" onClick={() => void send(hint)}>
@@ -102,7 +102,7 @@ export default function ChatWidget() {
             )}
             {messages.map((m, i) => (
               <div key={i} className={`chat-msg chat-${m.role}`}>
-                <p>{m.content || (busy && i === messages.length - 1 ? "Думаю…" : "")}</p>
+                <p>{m.content.replaceAll("**", "") || (busy && i === messages.length - 1 ? "Думаю…" : "")}</p>
               </div>
             ))}
           </div>

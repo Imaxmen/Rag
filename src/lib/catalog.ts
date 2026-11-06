@@ -12,6 +12,7 @@ export type Course = {
   price: number;
   oldPrice: number | null;
   teacher: string;
+  age: string;
 };
 
 export type Teacher = {
@@ -53,6 +54,7 @@ export async function getCatalog(): Promise<{ courses: Course[]; teachers: Teach
         price,
         oldPrice: number(row["Старая цена"]),
         teacher: text(row["Преподаватель"]),
+        age: text(row["Возраст"]),
       },
     ];
   });

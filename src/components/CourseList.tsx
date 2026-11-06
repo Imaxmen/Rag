@@ -30,15 +30,16 @@ export default function CourseList({ courses }: { courses: Course[] }) {
               <h3>{c.title}</h3>
               <p>{c.description}</p>
               <p className="meta">
-                {[c.direction, c.duration, c.format, c.teacher].filter(Boolean).join(", ")}
+                {[c.direction, c.age, c.duration, c.format, c.teacher].filter(Boolean).join(", ")}
               </p>
             </div>
             <div className="course-price">
-              <span className="price">{rubles.format(c.price)} ₽</span>
+              <span className="price">{rubles.format(c.price)} сум</span>
+              <span className="meta">за месяц</span>
               {c.oldPrice !== null && (
                 <s className="meta">
                   <span className="visually-hidden">Старая цена </span>
-                  {rubles.format(c.oldPrice)} ₽
+                  {rubles.format(c.oldPrice)} сум
                 </s>
               )}
             </div>

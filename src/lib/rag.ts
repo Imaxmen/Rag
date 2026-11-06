@@ -76,8 +76,11 @@ export function chunkText(text: string): string[] {
 }
 
 const STOP = new Set(
-  "и в во на с со по для что как это у вы вас вам мы нас не а но или то же ли бы от до из за к о об при про есть ли какой какие какая какое какую каких сколько где когда можно нужно ли".split(" "),
+  "и в во на с со по для что как это у вы вас вам мы нас не а но или то же ли бы от до из за к о об при про есть ли кто какой какие какая какое какую каких сколько где когда можно нужно ли".split(" "),
 );
+
+// Слова, которые есть почти в каждом фрагменте и не помогают искать (после обрезки до 4 букв).
+const STEM_STOP = new Set(["курс", "веде", "школ", "преп", "учит", "обуч"]);
 
 // Близкие по смыслу слова сводим к одному термину, чтобы «вернуть деньги» находило «возврат».
 const ALIAS: Record<string, string> = { верн: "возв", цена: "стои", цены: "стои", цену: "стои", цен: "стои", рубл: "стои" };
@@ -87,7 +90,8 @@ function tokenize(text: string): string[] {
   return (text.toLowerCase().replace(/ё/g, "е").match(/[\p{L}\p{N}]+/gu) ?? [])
     .filter((word) => !STOP.has(word))
     .map((word) => (/^\p{N}+$/u.test(word) ? word : word.slice(0, 4)))
-    .map((term) => ALIAS[term] ?? term);
+    .map((term) => ALIAS[term] ?? term)
+    .filter((term) => !STEM_STOP.has(term));
 }
 
 async function build(signature: string, files: string[]): Promise<Index> {
@@ -95,7 +99,10 @@ async function build(signature: string, files: string[]): Promise<Index> {
   const df = new Map<string, number>();
   for (const file of files) {
     const source = path.relative(KNOWLEDGE_DIR, file).split(path.sep).join("/");
-    for (const text of chunkText(await readText(file))) {
+    const raw = await readText(file);
+    // Каждая строка таблицы — отдельный фрагмент: так цена и преподаватель курса не смешиваются с другими курсами.
+    const pieces = [".xlsx", ".xls", ".csv"].includes(path.extname(file).toLowerCase()) ? raw.split("\n").filter(Boolean) : chunkText(raw);
+    for (const text of pieces) {
       const tokens = tokenize(`${source} ${text}`);
       const terms = new Map<string, number>();
       for (const token of tokens) terms.set(token, (terms.get(token) ?? 0) + 1);

@@ -682,16 +682,6 @@ h3 {
   max-width: 92%;
 }
 
-.chat-sources {
-  margin-top: 8px;
-  font-size: 12px;
-}
-
-.chat-sources a {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .chat-hints {
   display: grid;
   gap: 8px;

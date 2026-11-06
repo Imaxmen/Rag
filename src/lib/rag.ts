@@ -1,6 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { GoogleGenAI } from "@google/genai";
 import mammoth from "mammoth";
 import { extractText } from "unpdf";
 import * as XLSX from "xlsx";
@@ -8,27 +7,12 @@ import * as XLSX from "xlsx";
 export const KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 export const SUPPORTED = [".md", ".txt", ".pdf", ".docx", ".xlsx", ".xls", ".csv"];
 
-const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
-const DIMENSIONS = 768;
 const CHUNK_SIZE = 900;
-const BATCH = 32;
 
-type Chunk = { source: string; text: string; vector: number[] };
-type Index = { signature: string; chunks: Chunk[] };
+type Chunk = { source: string; text: string; terms: Map<string, number>; length: number };
+type Index = { signature: string; chunks: Chunk[]; df: Map<string, number>; avgLength: number };
 
 export type Hit = { source: string; text: string; score: number };
-
-export class MissingKeyError extends Error {
-  constructor() {
-    super("GEMINI_API_KEY не задан");
-  }
-}
-
-export function getClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new MissingKeyError();
-  return new GoogleGenAI({ apiKey });
-}
 
 async function listFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -91,33 +75,36 @@ export function chunkText(text: string): string[] {
   return chunks;
 }
 
-async function embed(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[][]> {
-  const ai = getClient();
-  const vectors: number[][] = [];
-  for (let i = 0; i < texts.length; i += BATCH) {
-    const response = await ai.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: texts.slice(i, i + BATCH),
-      config: { taskType, outputDimensionality: DIMENSIONS },
-    });
-    for (const item of response.embeddings ?? []) vectors.push(item.values ?? []);
-  }
-  if (vectors.length !== texts.length) throw new Error("Gemini вернул неполный набор эмбеддингов");
-  return vectors;
+const STOP = new Set(
+  "и в во на с со по для что как это у вы вас вам мы нас не а но или то же ли бы от до из за к о об при про есть ли какой какие какая какое какую каких сколько где когда можно нужно ли".split(" "),
+);
+
+// Близкие по смыслу слова сводим к одному термину, чтобы «вернуть деньги» находило «возврат».
+const ALIAS: Record<string, string> = { верн: "возв", цена: "стои", цены: "стои", цену: "стои", цен: "стои", рубл: "стои" };
+
+// Слова режутся до первых 4 букв: «курсы», «курсов», «курса» становятся одним термином «курс».
+function tokenize(text: string): string[] {
+  return (text.toLowerCase().replace(/ё/g, "е").match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((word) => !STOP.has(word))
+    .map((word) => (/^\p{N}+$/u.test(word) ? word : word.slice(0, 4)))
+    .map((term) => ALIAS[term] ?? term);
 }
 
 async function build(signature: string, files: string[]): Promise<Index> {
-  const pieces: { source: string; text: string }[] = [];
+  const chunks: Chunk[] = [];
+  const df = new Map<string, number>();
   for (const file of files) {
     const source = path.relative(KNOWLEDGE_DIR, file).split(path.sep).join("/");
-    const text = await readText(file);
-    for (const piece of chunkText(text)) pieces.push({ source, text: piece });
+    for (const text of chunkText(await readText(file))) {
+      const tokens = tokenize(`${source} ${text}`);
+      const terms = new Map<string, number>();
+      for (const token of tokens) terms.set(token, (terms.get(token) ?? 0) + 1);
+      for (const term of terms.keys()) df.set(term, (df.get(term) ?? 0) + 1);
+      chunks.push({ source, text, terms, length: tokens.length });
+    }
   }
-  const vectors = await embed(
-    pieces.map((p) => `Файл: ${p.source}\n\n${p.text}`),
-    "RETRIEVAL_DOCUMENT",
-  );
-  return { signature, chunks: pieces.map((p, i) => ({ ...p, vector: vectors[i] })) };
+  const avgLength = chunks.reduce((sum, c) => sum + c.length, 0) / (chunks.length || 1);
+  return { signature, chunks, df, avgLength };
 }
 
 // Индекс живёт в памяти процесса и пересобирается, когда меняется состав, размер или дата файлов.
@@ -143,23 +130,27 @@ async function getIndex(): Promise<Index> {
   }
 }
 
-function cosine(a: number[], b: number[]) {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
-}
-
+// Поиск BM25: работает локально, без внешних сервисов и лимитов.
 export async function search(query: string, limit = 6): Promise<Hit[]> {
   const index = await getIndex();
-  const [vector] = await embed([query], "RETRIEVAL_QUERY");
+  const words = [...new Set(tokenize(query))];
+  const total = index.chunks.length;
+  const k1 = 1.5;
+  const b = 0.75;
+
   return index.chunks
-    .map((chunk) => ({ source: chunk.source, text: chunk.text, score: cosine(vector, chunk.vector) }))
+    .map((chunk) => {
+      let score = 0;
+      for (const word of words) {
+        const tf = chunk.terms.get(word);
+        if (!tf) continue;
+        const n = index.df.get(word) ?? 0;
+        const idf = Math.log(1 + (total - n + 0.5) / (n + 0.5));
+        score += (idf * tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * chunk.length) / index.avgLength));
+      }
+      return { source: chunk.source, text: chunk.text, score };
+    })
+    .filter((hit) => hit.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }

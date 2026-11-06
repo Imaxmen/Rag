@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type Message = { role: "user" | "assistant"; content: string; sources?: string[] };
+type Message = { role: "user" | "assistant"; content: string };
 
 const HINTS = ["Какие курсы у вас есть?", "Сколько стоит рассрочка?", "Как вернуть деньги?"];
 
@@ -51,11 +51,6 @@ export default function ChatWidget() {
         update({ content: data?.error ?? "Не удалось получить ответ. Попробуйте ещё раз." });
         return;
       }
-      let sources: string[] = [];
-      try {
-        sources = JSON.parse(decodeURIComponent(response.headers.get("X-Sources") ?? "[]"));
-      } catch {}
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let answer = "";
@@ -65,7 +60,7 @@ export default function ChatWidget() {
         answer += decoder.decode(value, { stream: true });
         update({ content: answer });
       }
-      update({ content: answer.trim() || "Ответ пустой. Попробуйте переформулировать вопрос.", sources });
+      update({ content: answer.trim() || "Ответ пустой. Попробуйте переформулировать вопрос." });
     } catch {
       update({ content: "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз." });
     } finally {
@@ -108,19 +103,6 @@ export default function ChatWidget() {
             {messages.map((m, i) => (
               <div key={i} className={`chat-msg chat-${m.role}`}>
                 <p>{m.content || (busy && i === messages.length - 1 ? "Думаю…" : "")}</p>
-                {m.sources && m.sources.length > 0 && (
-                  <p className="chat-sources meta">
-                    Источники:{" "}
-                    {m.sources.map((s, k) => (
-                      <span key={s}>
-                        {k > 0 && ", "}
-                        <a href={`/api/knowledge?file=${encodeURIComponent(s)}`} target="_blank" rel="noreferrer">
-                          {s}
-                        </a>
-                      </span>
-                    ))}
-                  </p>
-                )}
               </div>
             ))}
           </div>

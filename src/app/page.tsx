@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import ChatWidget from "@/components/ChatWidget";
 import Cta from "@/components/Cta";
 import CourseList from "@/components/CourseList";
 import Faq from "@/components/Faq";
@@ -43,6 +44,7 @@ export default function Home() {
         <Cta />
       </main>
       <Footer />
+      <ChatWidget />
     </>
   );
 }

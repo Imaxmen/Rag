@@ -42,3 +42,6 @@ next-env.d.ts
 
 # taste-skill inspector output
 /.taste-skill/
+
+# Шаблон переменных окружения можно коммитить
+!.env.example
